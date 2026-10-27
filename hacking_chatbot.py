@@ -53,22 +53,43 @@ def load_leaderboard():
     try:
         with open(LEADERBOARD_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            data.sort(key=lambda x: (x.get("attempts", 999), x.get("date", "")))
+            data.sort(key=lambda x: (
+                x.get("attempts", 999), 
+                x.get("duration_seconds", 999999) if x.get("duration_seconds", 0) > 0 else 999999,
+                x.get("date", "")
+            ))
             return data
     except Exception:
         return list(DEFAULT_LEADERBOARD)
 
-def record_score(name, attempts, persona):
-    """Saves a cracked vault score to local JSON file and returns updated scores and rank."""
+def format_duration(seconds: float) -> str:
+    """Formats elapsed seconds into MM:SS format or '--:--'."""
+    if seconds is None or seconds < 0:
+        return "--:--"
+    total_sec = int(round(seconds))
+    mins = total_sec // 60
+    secs = total_sec % 60
+    return f"{mins:02d}:{secs:02d}"
+
+def record_score(name, attempts, persona, duration_seconds=0.0):
+    """Saves a cracked vault score to local JSON file with duration and returns updated scores and rank."""
     scores = load_leaderboard()
+    dur_val = round(duration_seconds, 1) if duration_seconds else 0.0
     entry = {
         "name": (name or "Anonymous Operator").strip(),
         "attempts": attempts,
+        "duration_seconds": dur_val,
+        "time_str": format_duration(dur_val),
         "date": time.strftime("%Y-%m-%d %H:%M"),
         "persona": persona
     }
     scores.append(entry)
-    scores.sort(key=lambda x: (x.get("attempts", 999), x.get("date", "")))
+    # Sort: 1st priority = lowest attempts, 2nd priority = fastest time, 3rd = date
+    scores.sort(key=lambda x: (
+        x.get("attempts", 999), 
+        x.get("duration_seconds", 999999) if x.get("duration_seconds", 0) > 0 else 999999,
+        x.get("date", "")
+    ))
     scores = scores[:50]
     try:
         with open(LEADERBOARD_FILE, "w", encoding="utf-8") as f:
@@ -78,13 +99,16 @@ def record_score(name, attempts, persona):
     
     rank = 1
     for idx, s in enumerate(scores):
-        if s["name"] == entry["name"] and s["attempts"] == entry["attempts"] and s["date"] == entry["date"]:
+        if (s["name"] == entry["name"] and 
+            s["attempts"] == entry["attempts"] and 
+            s.get("duration_seconds") == entry["duration_seconds"] and 
+            s["date"] == entry["date"]):
             rank = idx + 1
             break
     return scores, rank
 
 def render_leaderboard_table(scores, max_entries=10):
-    """Generates clean HTML table for displaying top hackers without markdown indentation artifacts."""
+    """Generates clean HTML table with time duration for displaying top hackers without markdown indentation artifacts."""
     if not scores:
         return "<div style='color:#64748b; text-align:center; padding:18px; font-family:JetBrains Mono; font-size:0.9rem;'>No scores recorded yet. Be the first operator to crack the safe!</div>"
     
@@ -106,14 +130,16 @@ def render_leaderboard_table(scores, max_entries=10):
             
         name = s.get("name", "Unknown")
         attempts = s.get("attempts", 0)
+        time_display = s.get("time_str") or format_duration(s.get("duration_seconds"))
         date = s.get("date", "-")
         
         rows_html += (
             f'<tr style="border-bottom: 1px solid rgba(255,255,255,0.06);">'
-            f'<td style="padding: 10px 14px;"><span class="{badge_class}">{rank_label}</span></td>'
-            f'<td style="padding: 10px 14px; color: #f8fafc; font-weight: bold; font-family: \'Rajdhani\', sans-serif; font-size: 1.15rem;">{name}</td>'
-            f'<td style="padding: 10px 14px; color: #00f0ff; font-weight: 900; font-family: \'Orbitron\', monospace; font-size: 1.15rem;">⚡ {attempts} msgs</td>'
-            f'<td style="padding: 10px 14px; color: #64748b; font-size: 0.8rem;">{date}</td>'
+            f'<td style="padding: 10px 12px;"><span class="{badge_class}">{rank_label}</span></td>'
+            f'<td style="padding: 10px 12px; color: #f8fafc; font-weight: bold; font-family: \'Rajdhani\', sans-serif; font-size: 1.15rem;">{name}</td>'
+            f'<td style="padding: 10px 12px; color: #00f0ff; font-weight: 900; font-family: \'Orbitron\', monospace; font-size: 1.1rem;">⚡ {attempts} msgs</td>'
+            f'<td style="padding: 10px 12px; color: #fbbf24; font-weight: 700; font-family: \'Orbitron\', monospace; font-size: 1.05rem;">⏱️ {time_display}</td>'
+            f'<td style="padding: 10px 12px; color: #64748b; font-size: 0.8rem;">{date}</td>'
             f'</tr>'
         )
         
@@ -121,10 +147,11 @@ def render_leaderboard_table(scores, max_entries=10):
         f'<table style="width: 100%; border-collapse: collapse; font-family: \'JetBrains Mono\', monospace; font-size: 0.9rem;">'
         f'<thead>'
         f'<tr style="border-bottom: 2px solid rgba(0, 240, 255, 0.3); color: #94a3b8; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 1.5px;">'
-        f'<th style="padding: 8px 14px; text-align: left;">Rank</th>'
-        f'<th style="padding: 8px 14px; text-align: left;">Callsign</th>'
-        f'<th style="padding: 8px 14px; text-align: left;">Score (Attempts)</th>'
-        f'<th style="padding: 8px 14px; text-align: left;">Date</th>'
+        f'<th style="padding: 8px 12px; text-align: left;">Rank</th>'
+        f'<th style="padding: 8px 12px; text-align: left;">Callsign</th>'
+        f'<th style="padding: 8px 12px; text-align: left;">Attempts</th>'
+        f'<th style="padding: 8px 12px; text-align: left;">Time (Duration)</th>'
+        f'<th style="padding: 8px 12px; text-align: left;">Date</th>'
         f'</tr>'
         f'</thead>'
         f'<tbody>{rows_html}</tbody>'
@@ -221,9 +248,15 @@ if "score_logged" not in st.session_state:
     st.session_state.score_logged = False
 if "player_rank" not in st.session_state:
     st.session_state.player_rank = None
+if "start_time" not in st.session_state:
+    st.session_state.start_time = None
+if "end_time" not in st.session_state:
+    st.session_state.end_time = None
+if "duration_seconds" not in st.session_state:
+    st.session_state.duration_seconds = 0.0
 
 def reset_vault_state(keep_player=True):
-    """Resets game state and rolls a new random code if enabled."""
+    """Resets game state, timer, and rolls a new random code if enabled."""
     st.session_state.attempts = 0
     st.session_state.unlocked = False
     st.session_state.show_breach_popup = False
@@ -231,6 +264,9 @@ def reset_vault_state(keep_player=True):
     st.session_state.player_rank = None
     st.session_state.chat_history = []
     st.session_state.discovered_digits = {}
+    st.session_state.start_time = time.time() if (keep_player and st.session_state.player_name) else None
+    st.session_state.end_time = None
+    st.session_state.duration_seconds = 0.0
     if not keep_player:
         st.session_state.player_name = ""
     if st.session_state.get("randomize_on_reset", True):
@@ -1006,6 +1042,9 @@ if not st.session_state.player_name:
             if name_input.strip():
                 st.session_state.player_name = name_input.strip()
                 st.session_state.attempts = 0
+                st.session_state.start_time = time.time()
+                st.session_state.end_time = None
+                st.session_state.duration_seconds = 0.0
                 st.session_state.score_logged = False
                 st.session_state.player_rank = None
                 st.rerun()
@@ -1046,11 +1085,29 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
-# HUD Metrics Grid
-col1, col2, col3, col4 = st.columns(4)
+# HUD Metrics Grid (5 Columns including Intrusion Timer)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 leaderboard_data = load_leaderboard()
-best_record_str = f"{leaderboard_data[0]['attempts']} msgs by {leaderboard_data[0]['name']}" if leaderboard_data else "None yet"
+if leaderboard_data:
+    top_entry = leaderboard_data[0]
+    time_part = f" ({top_entry.get('time_str', format_duration(top_entry.get('duration_seconds', 0)))})" if top_entry.get('time_str') or top_entry.get('duration_seconds') else ""
+    best_record_str = f"{top_entry['attempts']} msgs{time_part}"
+else:
+    best_record_str = "None yet"
+
+# Determine current elapsed duration
+if st.session_state.start_time is None and st.session_state.player_name:
+    st.session_state.start_time = time.time()
+
+if st.session_state.unlocked and st.session_state.end_time:
+    current_elapsed = st.session_state.duration_seconds
+    is_timer_running = False
+else:
+    current_elapsed = (time.time() - st.session_state.start_time) if st.session_state.start_time else 0.0
+    is_timer_running = not st.session_state.unlocked
+
+timer_display_str = format_duration(current_elapsed)
 
 with col1:
     lock_icon = "🔓" if st.session_state.unlocked else "🔒"
@@ -1071,11 +1128,45 @@ with col2:
         <div class="hud-value" style="color:#00f0ff;">
             ⚡ {st.session_state.attempts}
         </div>
-        <div style="font-size:0.7rem; color:#64748b; font-family:'JetBrains Mono'; margin-top:4px;">Lower is better for Rank!</div>
+        <div style="font-size:0.7rem; color:#64748b; font-family:'JetBrains Mono'; margin-top:4px;">Fewest msgs wins!</div>
     </div>
     """)
 
 with col3:
+    timer_status_label = "STOPPED (FINAL)" if st.session_state.unlocked else "ACTIVE (STOPWATCH)"
+    timer_color = "#10b981" if st.session_state.unlocked else "#fbbf24"
+    timer_script = ""
+    if is_timer_running and not st.session_state.unlocked:
+        timer_script = f"""
+        <script>
+        (function() {{
+            var totalSec = {int(current_elapsed)};
+            var el = document.getElementById('liveStopwatchValue');
+            if (!el) return;
+            if (window._safeTimerInterval) clearInterval(window._safeTimerInterval);
+            window._safeTimerInterval = setInterval(function() {{
+                totalSec++;
+                var m = Math.floor(totalSec / 60);
+                var s = totalSec % 60;
+                var mStr = (m < 10 ? '0' : '') + m;
+                var sStr = (s < 10 ? '0' : '') + s;
+                if (el) el.innerText = mStr + ':' + sStr;
+            }}, 1000);
+        }})();
+        </script>
+        """
+    render_html(f"""
+    <div class="hud-card">
+        <div class="hud-title">Intrusion Timer</div>
+        <div class="hud-value" style="color:{timer_color}; font-size:1.55rem;">
+            ⏱️ <span id="liveStopwatchValue">{timer_display_str}</span>
+        </div>
+        <div style="font-size:0.7rem; color:{'#34d399' if st.session_state.unlocked else '#f59e0b'}; font-family:'JetBrains Mono'; margin-top:4px;">{timer_status_label}</div>
+    </div>
+    {timer_script}
+    """)
+
+with col4:
     render_html(f"""
     <div class="hud-card">
         <div class="hud-title">Active Operator</div>
@@ -1086,14 +1177,14 @@ with col3:
     </div>
     """)
 
-with col4:
+with col5:
     render_html(f"""
     <div class="hud-card">
         <div class="hud-title">Hall of Fame Best</div>
         <div class="hud-value" style="color:#fbbf24; font-size:1.15rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
             🏆 {best_record_str}
         </div>
-        <div style="font-size:0.7rem; color:#f59e0b; font-family:'JetBrains Mono'; margin-top:4px;">Current #1 Record</div>
+        <div style="font-size:0.7rem; color:#f59e0b; font-family:'JetBrains Mono'; margin-top:4px;">#1 High Score</div>
     </div>
     """)
 
@@ -1131,8 +1222,8 @@ def show_vault_cracked_dialog():
         <div style="font-size: 2rem; font-family: 'Orbitron', monospace; font-weight: 900; color: {rank_color}; text-shadow: 0 0 15px {rank_color};">
             {rank_icon} RANK #{rank_val}
         </div>
-        <div style="font-size: 0.9rem; color: #cbd5e1; font-family: 'JetBrains Mono'; margin-top: 4px;">
-            Cracked in <strong style="color:#00f0ff; font-size:1.1rem;">{st.session_state.attempts}</strong> attempts!
+        <div style="font-size: 0.95rem; color: #cbd5e1; font-family: 'JetBrains Mono'; margin-top: 6px;">
+            Cracked in <strong style="color:#00f0ff; font-size:1.15rem;">{st.session_state.attempts}</strong> attempts &bull; Time: <strong style="color:#fbbf24; font-size:1.15rem;">{format_duration(st.session_state.duration_seconds)}</strong>
         </div>
     </div>
 
@@ -1173,12 +1264,13 @@ if st.session_state.get("show_breach_popup", False):
 # WIN BANNER ALERT
 # ---------------------------------------------------------
 if st.session_state.unlocked:
+    final_time_str = format_duration(st.session_state.duration_seconds)
     st.markdown(f"""
     <div class="breach-success">
         <div style="font-size:2.5rem; margin-bottom:6px;">🎉 🔓 🏆</div>
         <h2 style="color:#10b981; margin:0 0 6px 0; font-family:'Orbitron';">VAULT SUCCESSFULLY CRACKED!</h2>
-        <p style="color:#e2e8f0; font-size:1rem; max-width:600px; margin:0 auto 12px auto;">
-            Congratulations <strong style="color:#c084fc;">{st.session_state.player_name}</strong>! Safe opened with code <strong style="color:#00f0ff; font-family:'JetBrains Mono'; font-size:1.3rem;">{st.session_state.secret_code}</strong> in <strong>{st.session_state.attempts}</strong> attempts.
+        <p style="color:#e2e8f0; font-size:1rem; max-width:650px; margin:0 auto 12px auto;">
+            Congratulations <strong style="color:#c084fc;">{st.session_state.player_name}</strong>! Safe opened with code <strong style="color:#00f0ff; font-family:'JetBrains Mono'; font-size:1.3rem;">{st.session_state.secret_code}</strong> in <strong>{st.session_state.attempts}</strong> attempts &bull; ⏱️ Time: <strong style="color:#fbbf24; font-family:'JetBrains Mono'; font-size:1.15rem;">{final_time_str}</strong>.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -1317,8 +1409,19 @@ if active_prompt and not st.session_state.unlocked:
     if is_correct_code:
         st.session_state.unlocked = True
         st.session_state.show_breach_popup = True
+        
+        # Stop the intrusion timer immediately upon cracking the passcode!
+        if st.session_state.end_time is None:
+            st.session_state.end_time = time.time()
+            st.session_state.duration_seconds = max(0.1, round(st.session_state.end_time - (st.session_state.start_time or st.session_state.end_time), 1))
+            
         if not st.session_state.get("score_logged", False):
-            scores, rank = record_score(st.session_state.player_name, st.session_state.attempts, guard_name)
+            scores, rank = record_score(
+                st.session_state.player_name, 
+                st.session_state.attempts, 
+                guard_name,
+                duration_seconds=st.session_state.duration_seconds
+            )
             st.session_state.player_rank = rank
             st.session_state.score_logged = True
         play_sound("unlock")
@@ -1340,7 +1443,7 @@ if st.session_state.unlocked:
                     TOP VAULT HACKERS
                 </div>
                 <div style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#94a3b8;">
-                    Ranked by Lowest Attempts
+                    Ranked by Fewest Attempts & Fastest Time
                 </div>
             </div>
             {render_leaderboard_table(load_leaderboard(), max_entries=15)}
