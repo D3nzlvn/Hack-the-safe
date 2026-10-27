@@ -7,10 +7,10 @@ import json
 import textwrap
 from dotenv import load_dotenv
 
-def render_html(html_str: str):
+def render_html(html_str: str, allow_js: bool = True):
     """Renders HTML cleanly without triggering Markdown indented code block formatting."""
     clean_html = "\n".join(line.strip() for line in html_str.splitlines() if line.strip())
-    st.markdown(clean_html, unsafe_allow_html=True)
+    st.html(clean_html, unsafe_allow_javascript=allow_js)
 
 # Optional OpenAI import
 try:
@@ -1112,12 +1112,14 @@ timer_display_str = format_duration(current_elapsed)
 with col1:
     lock_icon = "🔓" if st.session_state.unlocked else "🔒"
     lock_label = "BREACHED" if st.session_state.unlocked else "SECURED"
+    lock_sub = "Firewall Breached" if st.session_state.unlocked else "Firewall Active"
     render_html(f"""
     <div class="hud-card">
         <div class="hud-title">Safe State</div>
         <div class="hud-value" style="color:{'#10b981' if st.session_state.unlocked else '#f43f5e'};">
             {lock_icon} {lock_label}
         </div>
+        <div style="font-size:0.7rem; color:{'#34d399' if st.session_state.unlocked else '#64748b'}; font-family:'JetBrains Mono'; margin-top:4px;">{lock_sub}</div>
     </div>
     """)
 
@@ -1135,33 +1137,53 @@ with col2:
 with col3:
     timer_status_label = "STOPPED (FINAL)" if st.session_state.unlocked else "ACTIVE (STOPWATCH)"
     timer_color = "#10b981" if st.session_state.unlocked else "#fbbf24"
-    timer_script = ""
+    timer_sub_color = "#34d399" if st.session_state.unlocked else "#f59e0b"
+    start_ms = int(st.session_state.start_time * 1000) if st.session_state.start_time else int(time.time() * 1000)
+
     if is_timer_running and not st.session_state.unlocked:
         timer_script = f"""
         <script>
         (function() {{
-            var totalSec = {int(current_elapsed)};
-            var el = document.getElementById('liveStopwatchValue');
-            if (!el) return;
-            if (window._safeTimerInterval) clearInterval(window._safeTimerInterval);
-            window._safeTimerInterval = setInterval(function() {{
-                totalSec++;
-                var m = Math.floor(totalSec / 60);
-                var s = totalSec % 60;
+            var startTimeMs = {start_ms};
+            if (window._safeTimerInterval) {{
+                clearInterval(window._safeTimerInterval);
+                window._safeTimerInterval = null;
+            }}
+            function tick() {{
+                var el = document.getElementById('liveStopwatchValue');
+                if (!el) return;
+                var now = Date.now();
+                var elapsedSec = Math.max(0, Math.floor((now - startTimeMs) / 1000));
+                var m = Math.floor(elapsedSec / 60);
+                var s = elapsedSec % 60;
                 var mStr = (m < 10 ? '0' : '') + m;
                 var sStr = (s < 10 ? '0' : '') + s;
-                if (el) el.innerText = mStr + ':' + sStr;
-            }}, 1000);
+                el.innerText = mStr + ':' + sStr;
+            }}
+            tick();
+            window._safeTimerInterval = setInterval(tick, 1000);
         }})();
         </script>
         """
+    else:
+        timer_script = """
+        <script>
+        (function() {
+            if (window._safeTimerInterval) {
+                clearInterval(window._safeTimerInterval);
+                window._safeTimerInterval = null;
+            }
+        })();
+        </script>
+        """
+
     render_html(f"""
     <div class="hud-card">
         <div class="hud-title">Intrusion Timer</div>
         <div class="hud-value" style="color:{timer_color}; font-size:1.55rem;">
             ⏱️ <span id="liveStopwatchValue">{timer_display_str}</span>
         </div>
-        <div style="font-size:0.7rem; color:{'#34d399' if st.session_state.unlocked else '#f59e0b'}; font-family:'JetBrains Mono'; margin-top:4px;">{timer_status_label}</div>
+        <div style="font-size:0.7rem; color:{timer_sub_color}; font-family:'JetBrains Mono'; margin-top:4px;">{timer_status_label}</div>
     </div>
     {timer_script}
     """)
