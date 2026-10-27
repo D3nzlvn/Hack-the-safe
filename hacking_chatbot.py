@@ -7,10 +7,13 @@ import json
 import textwrap
 from dotenv import load_dotenv
 
-def render_html(html_str: str, allow_js: bool = True):
+def render_html(html_str: str):
     """Renders HTML cleanly without triggering Markdown indented code block formatting."""
     clean_html = "\n".join(line.strip() for line in html_str.splitlines() if line.strip())
-    st.html(clean_html, unsafe_allow_javascript=allow_js)
+    if hasattr(st, "html"):
+        st.html(clean_html)
+    else:
+        st.markdown(clean_html, unsafe_allow_html=True)
 
 # Optional OpenAI import
 try:
@@ -1139,54 +1142,83 @@ with col3:
     timer_color = "#10b981" if st.session_state.unlocked else "#fbbf24"
     timer_sub_color = "#34d399" if st.session_state.unlocked else "#f59e0b"
     start_ms = int(st.session_state.start_time * 1000) if st.session_state.start_time else int(time.time() * 1000)
+    is_running_js = "false" if st.session_state.unlocked else "true"
 
-    if is_timer_running and not st.session_state.unlocked:
-        timer_script = f"""
-        <script>
-        (function() {{
-            var startTimeMs = {start_ms};
-            if (window._safeTimerInterval) {{
-                clearInterval(window._safeTimerInterval);
-                window._safeTimerInterval = null;
+    timer_card_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+        <style>
+            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+            body {{ background: transparent; font-family: 'JetBrains Mono', monospace; overflow: hidden; }}
+            .hud-card {{
+                background: linear-gradient(135deg, rgba(13, 22, 45, 0.7) 0%, rgba(8, 12, 27, 0.85) 100%);
+                border: 1px solid rgba(0, 240, 255, 0.2);
+                border-radius: 14px;
+                padding: 16px 20px;
+                text-align: center;
+                transition: transform 0.2s ease, border-color 0.2s ease;
             }}
-            function tick() {{
-                var el = document.getElementById('liveStopwatchValue');
-                if (!el) return;
-                var now = Date.now();
-                var elapsedSec = Math.max(0, Math.floor((now - startTimeMs) / 1000));
-                var m = Math.floor(elapsedSec / 60);
-                var s = elapsedSec % 60;
-                var mStr = (m < 10 ? '0' : '') + m;
-                var sStr = (s < 10 ? '0' : '') + s;
-                el.innerText = mStr + ':' + sStr;
+            .hud-card:hover {{
+                border-color: rgba(0, 240, 255, 0.5);
+                transform: translateY(-2px);
             }}
-            tick();
-            window._safeTimerInterval = setInterval(tick, 1000);
-        }})();
-        </script>
-        """
-    else:
-        timer_script = """
-        <script>
-        (function() {
-            if (window._safeTimerInterval) {
-                clearInterval(window._safeTimerInterval);
-                window._safeTimerInterval = null;
-            }
-        })();
-        </script>
-        """
-
-    render_html(f"""
-    <div class="hud-card">
-        <div class="hud-title">Intrusion Timer</div>
-        <div class="hud-value" style="color:{timer_color}; font-size:1.55rem;">
-            ⏱️ <span id="liveStopwatchValue">{timer_display_str}</span>
+            .hud-title {{
+                font-size: 0.8rem;
+                font-family: 'JetBrains Mono', monospace;
+                color: #94a3b8;
+                letter-spacing: 1.5px;
+                text-transform: uppercase;
+                margin-bottom: 6px;
+            }}
+            .hud-value {{
+                font-family: 'Orbitron', monospace;
+                font-size: 1.55rem;
+                font-weight: 700;
+                color: {timer_color};
+                white-space: nowrap;
+            }}
+            .hud-sub {{
+                font-size: 0.7rem;
+                color: {timer_sub_color};
+                font-family: 'JetBrains Mono', monospace;
+                margin-top: 4px;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="hud-card">
+            <div class="hud-title">Intrusion Timer</div>
+            <div class="hud-value">
+                ⏱️ <span id="hudStopwatch">{timer_display_str}</span>
+            </div>
+            <div class="hud-sub">{timer_status_label}</div>
         </div>
-        <div style="font-size:0.7rem; color:{timer_sub_color}; font-family:'JetBrains Mono'; margin-top:4px;">{timer_status_label}</div>
-    </div>
-    {timer_script}
-    """)
+        <script>
+            (function() {{
+                var isRunning = {is_running_js};
+                var startTimeMs = {start_ms};
+                var el = document.getElementById('hudStopwatch');
+                if (!isRunning) return;
+                function tick() {{
+                    var now = Date.now();
+                    var elapsedSec = Math.max(0, Math.floor((now - startTimeMs) / 1000));
+                    var m = Math.floor(elapsedSec / 60);
+                    var s = elapsedSec % 60;
+                    var mStr = (m < 10 ? '0' : '') + m;
+                    var sStr = (s < 10 ? '0' : '') + s;
+                    if (el) el.innerText = mStr + ':' + sStr;
+                }}
+                tick();
+                setInterval(tick, 1000);
+            }})();
+        </script>
+    </body>
+    </html>
+    """
+    st.components.v1.html(timer_card_html, height=105)
 
 with col4:
     render_html(f"""
