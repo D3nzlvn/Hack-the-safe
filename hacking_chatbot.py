@@ -1415,8 +1415,9 @@ if active_prompt and not st.session_state.unlocked:
         """)
     st.session_state.chat_history.append({"role": "user", "content": active_prompt})
     
-    # Check if this input unlocks the safe directly
-    is_correct_code = st.session_state.secret_code in active_prompt
+    # Check if player's input contains the code directly (e.g. "1269" or "1 2 6 9")
+    cleaned_prompt = active_prompt.replace(" ", "").replace("-", "")
+    is_correct_code = (st.session_state.secret_code in active_prompt) or (st.session_state.secret_code in cleaned_prompt)
     
     # 2. Generate response (OpenAI or Simulation)
     with st.chat_message("assistant", avatar="🤖"):
@@ -1458,8 +1459,9 @@ if active_prompt and not st.session_state.unlocked:
             """)
             st.session_state.chat_history.append({"role": "assistant", "content": reply})
 
-    # 3. Post-interaction evaluation: check if player typed code OR tricked the guard into leaking it
-    is_correct_code = (st.session_state.secret_code in active_prompt) or (st.session_state.secret_code in reply)
+    # 3. Post-interaction evaluation: ONLY the player wins if THEY entered the correct code in their text box
+    cleaned_prompt = active_prompt.replace(" ", "").replace("-", "")
+    is_correct_code = (st.session_state.secret_code in active_prompt) or (st.session_state.secret_code in cleaned_prompt)
     if is_correct_code:
         st.session_state.unlocked = True
         st.session_state.show_breach_popup = True
